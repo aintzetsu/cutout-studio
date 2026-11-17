@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cutout Studio — Client-Side Background Remover</title>
+  <link rel="stylesheet" href="styles/tokens.css">
+  <link rel="stylesheet" href="styles/main.css">
+  <script defer src="js/samples.js"></script>
+  <script defer src="js/remover.js"></script>
+  <script defer src="js/app.js"></script>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">CS</div>
+        <div>
+          <h1 class="brand-title">Cutout Studio</h1>
+          <div class="brand-sub">Client-side pixel cutout, magic wand &amp; edge matte workstation</div>
+        </div>
+      </div>
+
+      <div class="topbar-actions">
+        <button type="button" class="btn" id="undoBtn" disabled>Undo (Ctrl+Z)</button>
+        <button type="button" class="btn" id="resetBtn">Restore Original</button>
+        <button type="button" class="btn" id="compareBtn" aria-pressed="false">Split Compare</button>
+        <button type="button" class="btn btn-primary" id="autoRemoveBtn">Auto Remove BG</button>
+      </div>
+    </header>
+
+    <main class="workspace">
+      <!-- Left Rail: Inputs & Matte Controls -->
+      <aside class="sidebar" aria-label="Image input and matte controls">
+        <section class="panel-section">
+          <div class="section-label"><span>Source Image</span></div>
+          <label class="dropzone" id="dropzone" for="fileInput">
+            <div class="dropzone-title">Upload or Drop Image</div>
+            <div class="dropzone-sub">PNG, JPG, WebP · processed 100% locally</div>
+            <input type="file" id="fileInput" accept="image/png,image/jpeg,image/webp" hidden>
+          </label>
+          <div class="sample-grid" id="sampleGrid" role="list" aria-label="Sample subjects"></div>
+        </section>
+
+        <section class="panel-section">
+          <div class="section-label"><span>Removal Mode &amp; Tools</span></div>
+          <div class="tool-grid" role="group" aria-label="Editing tools">
+            <button type="button" class="tool-btn is-active" data-tool="wand" id="toolWand">
+              <span class="tool-title">Magic Wand</span>
+              <span class="tool-hint">Click BG to clear</span>
+            </button>
+            <button type="button" class="tool-btn" data-tool="erase" id="toolErase">
+              <span class="tool-title">Erase Brush</span>
+              <span class="tool-hint">Paint transparency</span>
+            </button>
+            <button type="button" class="tool-btn" data-tool="restore" id="toolRestore">
+              <span class="tool-title">Restore Brush</span>
+              <span class="tool-hint">Bring back pixels</span>
+            </button>
+            <button type="button" class="tool-btn" data-tool="eyedropper" id="toolKey">
+              <span class="tool-title">Global Color Key</span>
+              <span class="tool-hint">Remove matching hue</span>
+            </button>
+          </div>
+        </section>
+
+        <section class="panel-section">
+          <div class="section-label"><span>Matte Tuning</span></div>
+
+          <div class="control-group">
+            <div class="control-header">
+              <span>Auto Method</span>
+            </div>
+            <div class="segmented" role="group" aria-label="Auto background detection method">
+              <button type="button" class="seg-btn is-active" data-method="flood" id="methodFlood">Edge Flood</button>
+              <button type="button" class="seg-btn" data-method="global" id="methodGlobal">Global Key</button>
+            </div>
+          </div>
+
+          <div class="control-group">
+            <div class="control-header">
+              <label for="toleranceSlider">Color Tolerance</label>
+              <span class="mono-val" id="toleranceVal">38</span>
+            </div>
+            <input type="range" id="toleranceSlider" min="6" max="110" value="38">
+          </div>
+
+          <div class="control-group">
+            <div class="control-header">
+              <label for="featherSlider">Edge Feather</label>
+              <span class="mono-val" id="featherVal">2 px</span>
+            </div>
+            <input type="range" id="featherSlider" min="0" max="8" step="1" value="2">
+          </div>
+
+          <div class="control-group">
+            <div class="control-header">
+              <label for="brushSlider">Brush Size</label>
+              <span class="mono-val" id="brushVal">26 px</span>
+            </div>
+            <input type="range" id="brushSlider" min="4" max="80" step="2" value="26">
+          </div>
+
+          <label class="checkbox-row">
+            <input type="checkbox" id="interiorHolesChk" checked>
+            <span>Also clear matching enclosed holes</span>
+          </label>
+        </section>
+      </aside>
+
+      <!-- Center Stage -->
+      <section class="stage-col" aria-label="Cutout canvas viewport">
+        <div class="stage-toolbar">
+          <div class="status-pill" id="statusPill">Ready</div>
+          <div class="topbar-actions">
+            <button type="button" class="btn btn-ghost" id="holdOrigBtn">Hold to Preview Original</button>
+          </div>
+        </div>
+
+        <div class="stage-canvas-wrap" id="stageWrap">
+          <div class="canvas-frame" id="canvasFrame">
+            <canvas id="stageCanvas" width="760" height="540" aria-label="Interactive cutout canvas"></canvas>
+            <div class="split-handle" id="splitHandle" hidden aria-label="Before and after comparison divider" tabindex="0">
+              <div class="split-knob" aria-hidden="true">&harr;</div>
+            </div>
+            <div class="split-badge-left" id="splitBadgeLeft" hidden>Original</div>
+            <div class="split-badge-right" id="splitBadgeRight" hidden>Cutout</div>
+          </div>
+        </div>
+
+        <footer class="telemetry-bar">
+          <div class="telemetry-items">
+            <span>SIZE <strong id="metaDims">--</strong></span>
+            <span>TRANSPARENT <strong id="metaTransparent">--</strong></span>
+            <span>PASS <strong id="metaTime">--</strong></span>
+            <span>CURSOR <strong id="metaCursor">--, --</strong></span>
+          </div>
+          <span id="toolPrompt">Click anywhere on background to flood-remove, or drag with Brush.</span>
+        </footer>
+      </section>
+
+      <!-- Right Rail: Backdrop & Export -->
+      <aside class="sidebar sidebar-right" aria-label="Backdrop replacement and PNG export">
+        <section class="panel-section">
+          <div class="section-label"><span>Stage Backdrop</span></div>
+          <div class="backdrop-grid" role="group" aria-label="Backdrop presets">
+            <button type="button" class="swatch-btn swatch-checker is-active" data-bg="transparent">Clear</button>
+            <button type="button" class="swatch-btn" data-bg="#ffffff" style="background:#ffffff;color:#0f172a;">Paper</button>
+            <button type="button" class="swatch-btn" data-bg="#111827" style="background:#111827;color:#f8fafc;">Slate</button>
+            <button type="button" class="swatch-btn" data-bg="gradient-sunset" style="background:linear-gradient(135deg,#f97316,#ec4899);color:#fff;">Sunset</button>
+            <button type="button" class="swatch-btn" data-bg="gradient-mint" style="background:linear-gradient(135deg,#0d9488,#38bdf8);color:#fff;">Studio</button>
+            <button type="button" class="swatch-btn" data-bg="gradient-Sand" style="background:linear-gradient(135deg,#f5e6d3,#d6bfa3);color:#292524;">Warm</button>
+          </div>
+
+          <label class="custom-color-row" for="customBgInput">
+            <span>Custom Solid Fill</span>
+            <input type="color" id="customBgInput" value="#3b82f6">
+          </label>
+
+          <label class="checkbox-row">
+            <input type="checkbox" id="dropShadowChk">
+            <span>Add studio drop shadow</span>
+          </label>
+        </section>
+
+        <section class="panel-section">
+          <div class="section-label"><span>Export Result</span></div>
+          <div class="export-stack">
+            <button type="button" class="btn btn-primary" id="downloadTransparentBtn">
+              Download Transparent PNG
+            </button>
+            <button type="button" class="btn" id="downloadCompositeBtn">
+              Download With Backdrop PNG
+            </button>
+          </div>
+        </section>
+
+        <section class="panel-section">
+          <div class="tip-box">
+            <strong>Pro workflow:</strong> Run <em>Auto Remove BG</em> first, toggle <em>Also clear matching enclosed holes</em> for leaves or loops, then touch up stray edges with the <em>Magic Wand</em> or <em>Erase / Restore</em> brush.
+          </div>
+        </section>
+      </aside>
+    </main>
+  </div>
+
+  <div class="brush-cursor" id="brushCursor" hidden></div>
+  <div class="toast" id="toast" hidden role="status" aria-live="polite"></div>
+</body>
+</html>
